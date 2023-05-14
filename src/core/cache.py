@@ -130,7 +130,7 @@ class SystemCache:
         """Lasy sort.
            Biggest - first, lowest - last.
            Elements in between don`t sorted.
-           Complexity = O(n/2) i think. linear."""
+           """
         pntr = max_idx = 0
         elements = self._priority_list.__len__
         coll = self._priority_list
