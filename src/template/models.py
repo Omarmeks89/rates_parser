@@ -2,8 +2,8 @@ import typing
 import enum
 import collections
 
-import core.text_utils as t_ut
-from core.domain_models import TableSheetModel
+from .core_presets import text_utils as t_ut
+from .core_presets import domain_models as dm
 from services.preview_builders import ExcelSheetStruct  # TODO delete it
 
 
@@ -342,7 +342,7 @@ class TableRow:
             raise InvalidRowValues(err_msg)
 
 
-class SheetTemplate(TableSheetModel):
+class SheetTemplate(dm.TableSheetModel):
 
     class SymbolsGroupPosition(enum.Enum):
         NUMERIC: int = 1
@@ -364,11 +364,13 @@ class SheetTemplate(TableSheetModel):
 
     _groups = SymbolsGroupPosition
 
-    def __init__(
-            self,
-            name: str,
-            ) -> None:
-        self._name = name
+    @classmethod
+    def make_new_model(cls, *args, **kwargs) -> "dm.TableSheetModel":
+        """base impl of factory method."""
+        return cls(*args, **kwargs)
+
+    def __init__(self, *args, **kwargs) -> None:
+        self._name = None
         self._events = collections.deque()
         self._headers: typing.Optional[TableRow] = None
         self._values: typing.Optional[
@@ -386,7 +388,14 @@ class SheetTemplate(TableSheetModel):
 
     @property
     def name(self) -> str:
+        if self._name is None:
+            return ""
         return self._name
+
+    @name.setter
+    def name(self, name: str) -> None:
+        if self._name is None:
+            self._name = name
 
     @property
     def empty(self) -> bool:

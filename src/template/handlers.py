@@ -2,11 +2,44 @@ import typing
 
 from .messages import LoadExcelFile
 from .messages import LoadTxtFile
+from .messages import SaveExcelFile
 from .io_presets import ReadSettings
 from .io_presets import TxtReadSettings
+from .io_presets import WriteSettings
 
 from .core_presets import handlers as h
 from .core_presets import Cache
+
+
+class SaveExcelFileCmdHandler(h.Handler):
+
+    def __init__(
+            self,
+            uow: typing.Any,
+            cache: Cache
+            ) -> None:
+        self._uow = uow
+        self._cache = cache
+
+    def fetch_events(self) -> typing.List[typing.Any]:
+        return self._uow.events
+
+    def handle(self, cmd: SaveExcelFile) -> None:
+        with self._uow as operator:
+            dest = operator.port
+            write_set = WriteSettings(
+                    name=cmd.fname,
+                    path=cmd.path,
+                    mode=cmd.mode,
+                    suffix=cmd.suffix,
+                    )
+            model = self._cache.get(write_set.name)
+            if model is None:
+                raise Exception(f"File {write_set.name} not found.")
+            try:
+                dest.save(model, write_set)
+            except Exception as e:
+                raise Exception(f"SAVING FAILED: file {model.name}, {e=}")
 
 
 class LoadExcelFileCmdHandler(h.Handler):

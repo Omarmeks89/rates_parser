@@ -5,6 +5,10 @@ from core import api_router
 from core import handlers
 from core import command_filters
 from core.terminal_commands import CmdKey, command_validator
+from core import sys_constants
+
+
+constants = sys_constants
 
 
 __all__ = [
@@ -15,5 +19,6 @@ __all__ = [
         'api_router',
         'CmdKey',
         'command_filters',
-        'command_validator'
+        'command_validator',
+        "constants",
         ]

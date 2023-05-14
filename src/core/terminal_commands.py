@@ -3,53 +3,74 @@ import typing
 import enum
 import os
 
+from .io_adapters import (
+                FileReaderInterface,
+                FileWriterInterface,
+                )
+from .sys_constants import SysCommandType
+
+
+ExtFileDriver: typing.TypeAlias = object
+
 
 _PASS: bool = True
 _VALID: bool = True
 
-
+# cmd descr: ~$ loadfile [ path ] [ --flag ] [ name ]
+# ~$ loadfile /home/my_dir/data.xlsx --m [ --r ] tempname
 LOADFILE: typing.Final[str] = 'loadfile'
 SAVEFILE: typing.Final[str] = 'savefile'
 SHOWPREV: typing.Final[str] = 'showprev'
+
+ExtFileDriver: typing.TypeAlias = object
+ExtFileReader: typing.TypeAlias = object
+ExtFileWriter: typing.TypeAlias = object
 
 
 class ValidationError(BaseException):
     pass
 
 
-class CommandParams(enum.Enum):
+class CommandParams(str, enum.Enum):
     PATH: str = 'path'
     FLAG: str = 'flag'
     FNAME: str = 'fname'
     SUFFIX: str = 'suffix'
 
 
-class CommandFlag(enum.Enum):
+class CommandFlag(str, enum.Enum):
     MULTY: str = '--m'
     RAIL: str = '--r'
 
 
-class CmdKey(enum.Enum):
+class CmdKey(str, enum.Enum):
     LOADFILE: str = LOADFILE
     SAVEFILE: str = SAVEFILE
     SHOWPREV: str = SHOWPREV
 
 
 _FLAGS: typing.Dict[str, typing.Callable] = {}
-_SUFFIXES: typing.Dict[str, typing.Any] = {}
+_SUBCRIBED_READERS: typing.Dict[str, typing.Any] = {}
+_SUBCRIBED_WRITERS: typing.Dict[
+                        str,
+                        typing.Tuple[
+                            ExtFileDriver,
+                            ExtFileWriter,
+                            ]
+                        ] = {}
 _REQUIRED_CMD_ARGS = {
         LOADFILE: (
-            CommandParams.PATH.value,
-            CommandParams.FLAG.value,
-            CommandParams.FNAME.value,
-            CommandParams.SUFFIX.value
+            CommandParams.PATH,
+            CommandParams.FLAG,
+            CommandParams.FNAME,
+            CommandParams.SUFFIX
             ),
         SAVEFILE: (
-            CommandParams.FNAME.value,
-            CommandParams.SUFFIX.value
+            CommandParams.FNAME,
+            CommandParams.SUFFIX
             ),
         SHOWPREV: (
-            CommandParams.FNAME.value
+            CommandParams.FNAME
             )
         }
 
@@ -63,16 +84,26 @@ def _check_fname(fname: list, checkable: bool) -> bool:
     return valid if checkable else _PASS
 
 
+def _get_io_handlers(f_suff: str, _t: SysCommandType) -> typing.Callable:
+    if _t == SysCommandType.IO_READ:
+        return lambda x, y: get_readers_repo().get(x) if y else _PASS
+    return lambda x, y: get_writers_repo().get(x) if y else _PASS
+
+
 _VALIDATORS: typing.Dict[typing.Tuple[str, str], typing.Callable] = {
-        CommandParams.PATH.value: _path_exists,
-        CommandParams.FLAG.value: lambda x, y: flags().get(x) if y else _PASS,
-        CommandParams.FNAME.value: _check_fname,
-        CommandParams.SUFFIX.value: lambda x, y: suffixes().get(x) if y else _PASS
+        CommandParams.PATH: _path_exists,
+        CommandParams.FLAG: lambda x, y: flags().get(x) if y else _PASS,
+        CommandParams.FNAME: _check_fname,
+        CommandParams.SUFFIX: _get_io_handlers,
         }
 
 
-def get_validator(arg: str) -> typing.Callable[..., bool]:
-    return _VALIDATORS.get(arg)
+def get_validator(arg: str, _t: SysCommandType) -> typing.Callable[..., bool]:
+    valid_hnd = _VALIDATORS.get(arg)
+    if _t in (SysCommandType.IO_READ, SysCommandType.IO_WRITE):
+        if valid_hnd is not None:
+            return valid_hnd(arg, _t)
+    return valid_hnd
 
 
 def flags() -> typing.Callable:
@@ -84,7 +115,7 @@ def flags() -> typing.Callable:
     def _get(flag: str) -> bool:
         return flag in _FLAGS
 
-    def _get_pattern(flag: str) -> typing.Any:
+    def _get_pattern(flag: str) -> typing.Callable:
         return _FLAGS.get(flag)
 
     flags.add = _add_flag
@@ -93,22 +124,59 @@ def flags() -> typing.Callable:
     return flags
 
 
-def suffixes() -> typing.Callable:
+def get_readers_repo() -> typing.Callable:
 
-    def _add_suff(suffix: str, item: typing.Any) -> None:
-        if suffix not in _SUFFIXES:
-            _SUFFIXES[suffix] = item
+    def _add_suff(
+            suffix: str,
+            item: typing.Tuple[
+                        ExtFileDriver,
+                        FileReaderInterface,
+                        ],
+            ) -> None:
+        if suffix not in _SUBCRIBED_READERS:
+            _SUBCRIBED_READERS[suffix] = item
 
     def _get(suffix: str) -> bool:
-        return suffix in _SUFFIXES
+        return suffix in _SUBCRIBED_READERS
 
-    def _get_item(suffix: str) -> typing.Any:
-        return _SUFFIXES.get(suffix)
+    def _get_item(suffix: str) -> typing.Tuple[
+                                    ExtFileDriver,
+                                    FileReaderInterface,
+                                    ]:
+        """return Driver, Reader for file operations."""
+        return _SUBCRIBED_READERS.get(suffix)
 
-    suffixes.add = _add_suff
-    suffixes.get = _get
-    suffixes.get_pattern = _get_item
-    return suffixes
+    get_readers_repo.add = _add_suff
+    get_readers_repo.get = _get
+    get_readers_repo.get_pattern = _get_item
+    return get_readers_repo
+
+
+def get_writers_repo() -> typing.Callable:
+
+    def _reg_suff(
+            suffix: str,
+            item: typing.Tuple[
+                        ExtFileDriver,
+                        FileWriterInterface,
+                        ],
+            ) -> None:
+        if suffix not in _SUBCRIBED_WRITERS:
+            _SUBCRIBED_WRITERS[suffix] = item
+
+    def _get(suffix: str) -> bool:
+        return suffix in _SUBCRIBED_WRITERS
+
+    def _get_item(suffix: str) -> typing.Tuple[
+                                    ExtFileDriver,
+                                    FileWriterInterface,
+                                    ]:
+        return _SUBCRIBED_WRITERS.get(suffix)
+
+    get_writers_repo.add = _reg_suff
+    get_writers_repo.get = _get
+    get_writers_repo.get_pattern = _get_item
+    return get_writers_repo
 
 
 def check_load_path_exists(
@@ -130,13 +198,15 @@ class command_validator:
 
     def __init__(
             self,
-            *,
+            sys_task_type: SysCommandType,
+            /,
             check_mode: bool = False,
             check_path: bool = False,
             check_flag: bool = False,
             check_args: bool = False,
             check_suffix: bool = False
             ) -> None:
+        self._t_type = sys_task_type
         self.mode = check_mode
         self.path = check_path
         self.flag = check_flag
@@ -161,7 +231,8 @@ class command_validator:
                 all_valid.append(_PASS)
             for arg in checked_args:
                 value = getattr(cmd, arg)
-                validator, contr = get_validator(arg), self.__dict__.get(arg)
+                validator = get_validator(arg, self._t_type)
+                contr = self.__dict__.get(arg)
                 is_valid = validator(value, contr) if validator else True
 
                 if is_valid:
@@ -240,7 +311,7 @@ class command_validator:
 __all__ = [
         'ValidationError',
         'flags',
-        'suffixes',
+        'get_readers_repo',
         'command_validator',
         'CmdKey'
         ]

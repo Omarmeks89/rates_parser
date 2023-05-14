@@ -2,9 +2,11 @@ import dataclasses
 
 from .core_presets import messages as c_msg
 from .core_presets import command_validator
+from .core_presets import constants as cst
 
 
 @command_validator(
+    cst.SysCommandType.IO_READ,
     check_path=True,
     check_flag=True,
     check_args=True,
@@ -21,6 +23,7 @@ class LoadExcelFile(c_msg.Command):
 
 
 @command_validator(
+        cst.SysCommandType.IO_READ,
         check_path=True,
         check_flag=True,
         check_args=True,
@@ -37,6 +40,7 @@ class LoadTxtFile(c_msg.Command):
 
 
 @command_validator(
+        cst.SysCommandType.IO_WRITE,
         check_args=True,
         check_suffix=True
         )

@@ -5,33 +5,10 @@ import collections
 
 import openpyxl as oppxl
 
-from template.models import SheetTemplate
-
-
-class AdapterError(Exception):
-    pass
-
-
-class DriverError(Exception):
-    pass
-
-
-class Driver(abc.ABC):
-    ...
-
-
-class _Reader(abc.ABC):
-
-    @abc.abstractmethod
-    def read(self) -> typing.NoReturn:
-        pass
-
-
-class _Writer(abc.ABC):
-
-    @abc.abstractmethod
-    def write(self) -> typing.NoReturn:
-        pass
+from .core_presets import sys_io_interface as sii
+from .core_presets import sys_io_exceptions as sie
+from .core_presets import int_tabl_model as itm
+from .drivers import LoaderConfigError
 
 
 class FileIoInterface(abc.ABC):
@@ -188,7 +165,7 @@ class _ExcelPostLoader:
         return _base_loader(line)
 
 
-class ExcelFileReader(_Reader):
+class ExcelFileReader(sii.FileReaderInterface):
 
     def read(self, settings: typing.Any) -> oppxl.Workbook:
         book = oppxl.load_workbook(settings.path,
@@ -227,7 +204,7 @@ class ExcelFileReader(_Reader):
 
     def _set_active_sheet(
             self,
-            book: typing.Any,
+            book: oppxl.Workbook,
             sheetname: str
             ) -> typing.Any:
         """
@@ -245,7 +222,7 @@ class ExcelFileReader(_Reader):
         return sheet.max_column, sheet.max_row
 
 
-class TxtFileReader(_Reader):
+class TxtFileReader(sii.FileReaderInterface):
     """
     Test txt_reader implementation.
     """
@@ -259,7 +236,7 @@ class TxtFileReader(_Reader):
                 yield line
 
 
-class ExcelFileWriter(_Writer):
+class ExcelFileWriter(sii.FileWriterInterface):
 
     def __init__(self) -> None:
         self._wb = None
@@ -269,7 +246,7 @@ class ExcelFileWriter(_Writer):
             self,
             settings: typing.Any,
             *,
-            auto_closing: bool = False
+            auto_closing: bool = False,
             ) -> None:
 
         sheet = None
@@ -313,27 +290,35 @@ class ExcelFileWriter(_Writer):
         try:
             self._wb.close()
         except Exception:
-            self._wb = None
+            pass
+        self._wb = None
 
 
 class BaseFileIOAdapter(FileIoInterface):
 
-    def __init__(self, loader: typing.Any, dumper: typing.Any) -> None:
+    def __init__(
+            self,
+            loader: typing.Any,
+            dumper: typing.Any,
+            model: itm.TableSheetModel,
+            ) -> None:
         self._loader = loader
         self._dumper = dumper
+        self._model = model
         self._errors = collections.deque()
 
     @property
     def errors(self) -> typing.Any:
-        for err in self._errors:
-            yield err
+        """TODO -> while True & popleft from deque."""
+        while self._errors:
+            yield self._errors.popleft()
 
     def load(self, read_params: typing.Any) -> typing.Any:
         driver, loader = self._configure_load_sources(read_params)
-        model = SheetTemplate(read_params.name)
+        model = self._model.make_new_model()
+        model.name = read_params.name
 
         while True:
-
             raw_data = loader.load()
             if raw_data is None:
                 break
@@ -346,7 +331,7 @@ class BaseFileIOAdapter(FileIoInterface):
                     values = driver.fetch_values(raw_data)
                     if model.validate(values):
                         model.add_values(values)
-            except DriverError as e:
+            except sie.DriverError as e:
                 self._errors.append(e)
 
         return model
@@ -354,50 +339,66 @@ class BaseFileIOAdapter(FileIoInterface):
     def _configure_load_sources(
                     self,
                     settings: typing.Any
-                    ) -> typing.Optional[typing.Tuple[Driver, str]]:
+                    ) -> typing.Optional[typing.Tuple[
+                                sii.FileDriverInterface,
+                                str,
+                                ]]:
         try:
             self._loader.setup(settings)
             sources = self._loader.get_load_sources()
             self._validate_sources(sources)
             return sources
-        except Exception as e:  # LoaderConfigError()
+        except (LoaderConfigError, FileNotFoundError) as e:
             self._errors.append(e)
-            raise AdapterError from e
+            self._loader.clean_setup()
+            raise sie.AdapterError from e
+        except Exception as e:
+            self._loader.clean_setup()
+            raise sie.AdapterError from e
 
     def _validate_sources(self, sources: typing.Tuple) -> None:
         if not all(sources) or len(sources) != 2:
             msg = f'Invalid sources: <{sources}>.'
-            raise AdapterError(msg)
+            raise sie.AdapterError(msg)
 
-    def save(self, model: typing.Any,
+    def save(self, model: itm.TableSheetModel,
              write_params: typing.Any) -> None:
         """Write by line."""
         sources = self._get_dump_sources(write_params)
         self._validate_sources(sources)
         driver, writer = sources
 
-        for line in model.rows:  # need better attr name
+        for line in model.rows:
             try:
                 compiled = driver.read(line)
                 writer.send(compiled)
-            except DriverError as e:
+            except sie.DriverError as e:
                 self._errors.append(e)
 
         writer.throw(StopIteration)
+        writer.close()
 
     def _get_dump_sources(
                 self,
                 settings: typing.Any
-                ) -> typing.Optional[typing.Tuple[Driver, str]]:
+                ) -> typing.Optional[typing.Tuple[
+                            sii.FileDriverInterface,
+                            str,
+                            ]]:
         try:
             self._dumper.setup(settings)
             return self._dumper.get_dump_sources()
-        except Exception as e:  # LoaderConfigError()
+        except (LoaderConfigError, FileNotFoundError) as e:
             self._errors.append(e)
-            return None, None
+            self._dumper.clean_setup()
+            raise sie.AdapterError from e
+        except Exception as e:
+            self._dumper.clean_setup()
+            raise sie.AdapterError from e
 
     def close(self) -> None:
-        pass
+        self._loader.clean_setup()
+        self._dumper.clean_setup()
 
 
 class FileOperator(UnitOfWork):

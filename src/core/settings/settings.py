@@ -7,7 +7,7 @@ import re
 import os
 
 
-ENV_FILE: typing.Final[str] = 'env.env'
+ENV_FILE: typing.Final[str] = '.env'
 
 MULTY_HEADERS_KEY: typing.Final[str] = 'MULTY_HEADERS'
 RAIL_HEADERS_KEY: typing.Final[str] = 'RAIL_HEADERS'
@@ -100,7 +100,6 @@ def _split_multiple(
 class pattern:
     """
     Generate pattern map from config and headers.
-    Used closures now.
     Return MappingProxyType for using with drivers.
     """
     def __init__(self) -> None:

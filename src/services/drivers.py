@@ -4,6 +4,8 @@ import abc
 
 import openpyxl as opxl
 
+from .core_presets import io_adapters as ia
+
 
 NEED_COMMENTS = True
 
@@ -31,7 +33,7 @@ class _Compiler(abc.ABC):
         pass
 
 
-class Driver:
+class DriverForLoadIntf(abc.ABC):
 
     @abc.abstractmethod
     def fetch_values(self, item: typing.Any) -> typing.NoReturn:
@@ -42,14 +44,103 @@ class Driver:
         pass
 
 
-class Loader:
+class DriverForSaveIntf(abc.ABC):
+
+    @abc.abstractmethod
+    def read(line: typing.List[str]) -> typing.NoReturn:
+        pass
+
+
+class IOConfigurator(abc.ABC):
 
     @abc.abstractmethod
     def setup(self, settings: typing.Any) -> typing.NoReturn:
         pass
 
 
-class BaseLoader(Loader):
+class LoadSourceConfigurator(abc.ABC):
+
+    @abc.abstractmethod
+    def get_load_sources(self) -> typing.NoReturn:
+        pass
+
+
+class DumpSourceConfigurator(abc.ABC):
+
+    @abc.abstractmethod
+    def get_dump_sources(self) -> typing.NoReturn:
+        pass
+
+
+class DumpConfigurator(DumpSourceConfigurator, IOConfigurator):
+
+    def __init__(self, writers: typing.Callable) -> None:
+        self._writers = writers
+        self._settings = None
+        self._driver = None
+        self._dumper = None
+
+    def setup(self, settings: typing.Any) -> None:
+        driver, writer = self._writers.get_pattern(settings.suffix)
+        self._driver = driver
+        self._writer = writer
+        self._settings = settings
+
+    def get_dump_sources(self) -> typing.Tuple[
+                                        ia.FileDriverInterface,
+                                        typing.Callable,
+                                        ]:
+
+        writer = self._writer.write(self._settings)
+        is_gen = inspect.isgenerator
+        is_gen_func = inspect.isgeneratorfunction
+        if is_gen(writer) or is_gen_func(writer):
+            pass
+        else:
+            msg = (
+                f"{type(self).__name__}: writer have type '{type(writer)}'",
+                ", expected generator or generator func.",
+                )
+            raise LoaderConfigError(msg)
+
+        def _send(data: typing.List[str]) -> None:
+            nonlocal writer
+            try:
+                writer.send(data)
+            except Exception:
+                pass
+
+        def _throw(exp: Exception) -> None:
+            nonlocal writer
+            try:
+                writer.throw(exp)
+            except StopIteration:
+                pass
+
+        def _close() -> None:
+            nonlocal writer
+            try:
+                self._writer.close()
+                writer.close()
+            except Exception:
+                writer.close()
+
+        def dummy() -> None:
+            """empty for closure."""
+            pass
+
+        dummy.send = _send
+        dummy.throw = _throw
+        dummy.close = _close
+        return self._driver, dummy
+
+    def clean_setup(self) -> None:
+        self._writer.close()
+        self._settings = None
+        self._driver = None
+
+
+class LoadConfigurator(LoadSourceConfigurator, IOConfigurator):
 
     def __init__(self,
                  readers: typing.Callable,
@@ -76,7 +167,7 @@ class BaseLoader(Loader):
             self._settings = settings
 
     def get_load_sources(self) -> typing.Tuple[
-                                    Driver, typing.Callable
+                                    ia.FileDriverInterface, typing.Callable
                                     ]:
         """Return Driver and func, that read data from reader."""
 
@@ -112,16 +203,17 @@ class BaseLoader(Loader):
         dummy.stop_loading = stop_loading
         return self._driver, dummy
 
+    def clean_setup(self) -> None:
+        try:
+            self._reader.close()
+        except AttributeError:
+            self._reader = None
+            self._driver = None
+            self._settings = None
 
-class BaseSaver:
-    ...
 
-
-class BaseDriver(Driver):
-    """
-    TODO make fetch abstract.
-    move impl into TxtDriver class.
-    """
+class BaseDriver(DriverForLoadIntf, ia.FileDriverInterface):
+    """I/O Driver Base class."""
 
     def __init__(self,
                  logger: typing.Any,
@@ -141,9 +233,52 @@ class BaseDriver(Driver):
         # validate
         self._headers_preset = preset
 
+    @abc.abstractmethod
+    def fetch_values(self, item: str) -> typing.NoReturn:
+        """NotImplemented."""
+        pass
+
+    @abc.abstractmethod
+    def fetch_headers(
+            self,
+            item: str
+            ) -> typing.NoReturn:
+        """NotImplemented."""
+        pass
+
+    def validate(self, item: str) -> None:
+        if not isinstance(item, str):
+            err_msg = f'Unsupportable item type: {type(item)}, expected <str>.'
+            self._logger.warning(err_msg)
+            raise DriverError(err_msg)
+
+    def _handle_errors(self) -> None:
+        if self._errors:
+            for e in self._errors:
+                self._logger.warning(e)
+
+
+class ExcelSaveDriver(DriverForSaveIntf, ia.FileDriverInterface):
+
+    def __init__(self, logger: typing.Any) -> None:
+        self._logger = logger
+
+    def read(self, line: typing.List[str]) -> typing.List[str]:
+        """Now it`s just proxy."""
+        return line
+
+
+class TxtDriver(BaseDriver):
+    """ Driver for .txt files."""
+    def __init__(self,
+                 logger: typing.Any,
+                 compiler: _Compiler) -> None:
+        self._compiler = compiler
+        self._logger = logger
+        self._headers_preset = None
+        self._errors = []
+
     def fetch_values(self, item: str) -> typing.List[str]:
-        """Fetch parts of data using compilers .txt.
-           Try to clean code, delete flag from args."""
 
         self.validate(item)
 
@@ -158,7 +293,6 @@ class BaseDriver(Driver):
                           f'line:\n\t{item}.\n'
                 self._errors.append(err_msg)
 
-            self._logger.warning(fetched_value)
             if fetched_value is None:
                 msg = f'[-] Value for header <{header}> not found. '\
                       f'Check with exact file. Header pos: {idx}.'
@@ -193,17 +327,6 @@ class BaseDriver(Driver):
         self._handle_errors()
         return headers
 
-    def validate(self, item: str) -> None:
-        if not isinstance(item, str):
-            err_msg = f'Unsupportable item type: {type(item)}, expected <str>.'
-            self._logger.warning(err_msg)
-            raise DriverError(err_msg)
-
-    def _handle_errors(self) -> None:
-        if self._errors:
-            for e in self._errors:
-                self._logger.warning(e)
-
 
 class ExcelDriver(BaseDriver):
 
@@ -229,7 +352,6 @@ class ExcelDriver(BaseDriver):
             value = self._compiler.compile_values(item)
         except CompilerError as e:
             self._errors.append(e)
-            self._logger.warning(e)
 
         self._handle_errors()
         return value
@@ -241,17 +363,13 @@ class ExcelDriver(BaseDriver):
 
         header = []
         self._compiler.set_pattern((NEED_COMMENTS, headers_preset))
-        self._logger.debug(f'compiler pattern = {self._compiler.pattern}')
         try:
             positions, header = self._compiler.compile_headers(item)
             if len(positions) == len(headers_preset):
                 if not self._positions_preset:
                     self._positions_preset = positions
-            self._logger.warning(f'position {positions} != {header}')
         except CompilerError as e:
-            msg = f'Location {self.__class__.__name__}, err: {e}'
             self._errors.append(e)
-            self._logger.warning(msg)
         self._handle_errors()
         if self._have_all_required_headers(
                 headers_preset,

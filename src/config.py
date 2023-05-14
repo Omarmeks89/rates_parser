@@ -12,6 +12,7 @@ from core import terminal_commands as tc
 from core.settings import settings as cs
 from template import handlers as th
 from template import messages as tm
+from template import tmp_models
 from view import handlers as vh
 from view import messages as vm
 import services.services as srv
@@ -62,36 +63,48 @@ basedriver = drv.ExcelDriver(
         system_logger,
         excel_compiler
         )
-txt_driver = drv.BaseDriver(
+txt_driver = drv.TxtDriver(
         system_logger,
         txt_compiler
         )
+xl_save_drv = drv.ExcelSaveDriver(system_logger)
 
 
 # data parsing patterns configuration
+# load_config == OrderdDict
+
 load_config = cs.make_config(path=cs._make_dotenv_path())
-readers = tc.suffixes()
+readers = tc.get_readers_repo()
+writers = tc.get_writers_repo()
 flags = tc.flags()
+
+# readers subscribing
 readers.add('.xlsx', (basedriver, srv.ExcelFileReader()))
 readers.add('.txt', (txt_driver, srv.TxtFileReader()))
 
+# writers subscribing
+writers.add(".xlsx", (xl_save_drv, srv.ExcelFileWriter()))
+
 
 flags.add(
-        tc.CommandFlag.MULTY.value,
+        tc.CommandFlag.MULTY,
         cs.build_patterns_map(
             cs.MULTY_HEADERS_KEY,
             load_config
             )
         )
 flags.add(
-        tc.CommandFlag.RAIL.value,
+        tc.CommandFlag.RAIL,
         cs.build_patterns_map(
             cs.RAIL_HEADERS_KEY,
             load_config
             )
         )
-baseloader = drv.BaseLoader(readers, flags)
-repository = srv.BaseFileIOAdapter(baseloader, 'dummy')
+baseloader = drv.LoadConfigurator(readers, flags)
+basedumper = drv.DumpConfigurator(writers)
+# dummy - dumper
+sheet_model = tmp_models.SheetTemplate()
+repository = srv.BaseFileIOAdapter(baseloader, basedumper, sheet_model)
 uow = srv.FileOperator(repository, system_logger)
 
 
@@ -103,12 +116,14 @@ registrator.register_channel(cm.Command, channels.Channel())
 load_excel_hnd = th.LoadExcelFileCmdHandler(uow, Cache)
 show_model_prev_hnd = vh.ShowPreviewCmdHandler(uow, Cache)
 load_txt_hnd = th.LoadTxtFileCmdHandler(uow, Cache)
+save_xl_file = th.SaveExcelFileCmdHandler(uow, Cache)
 
 
 # cmd handlers subscribe on channels
-registrator.register_handler(tm.LoadExcelFile, [load_excel_hnd])
-registrator.register_handler(vm.ShowModelPreview, [show_model_prev_hnd])
-registrator.register_handler(tm.LoadTxtFile, [load_txt_hnd])
+registrator.register_handler(tm.LoadExcelFile, [load_excel_hnd, ])
+registrator.register_handler(vm.ShowModelPreview, [show_model_prev_hnd, ])
+registrator.register_handler(tm.LoadTxtFile, [load_txt_hnd, ])
+registrator.register_handler(tm.SaveExcelFile, [save_xl_file, ])
 
 
 def on_startup() -> None:

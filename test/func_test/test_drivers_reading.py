@@ -32,9 +32,9 @@ def multy_headers(config: collections.OrderedDict) -> None:
 @pytest.fixture
 def driver(
         logger: logger
-        ) -> drivers.Driver:
+        ) -> drivers.DriverForLoadIntf:
     txt_compiler = drivers.TxtCompiler()
-    driver = drivers.BaseDriver(
+    driver = drivers.TxtDriver(
             logger,
             txt_compiler
             )
@@ -97,7 +97,7 @@ def test_preset_fixture(
 
 def test_txtcompiler_read_line(
         multy_headers: types.MappingProxyType,
-        driver: drivers.Driver
+        driver: drivers.DriverForLoadIntf
         ) -> None:
     line = 'Shanghai-Vladivostok $2600/4800/4800 by HEUNG-A Excl DTHC $450/550'
     driver.headers_preset = multy_headers
@@ -107,7 +107,7 @@ def test_txtcompiler_read_line(
 
 def test_txtcompiler_fetch_values(
         multy_headers: types.MappingProxyType,
-        driver: drivers.Driver,
+        driver: drivers.DriverForLoadIntf,
         ) -> None:
     line = 'Shanghai-Vladivostok $2600/4800/4800 by HEUNG-A Excl DTHC $450/550'
     driver.headers_preset = multy_headers
@@ -118,7 +118,7 @@ def test_txtcompiler_fetch_values(
 @pytest.mark.xfail(raises=drivers.DriverError)
 def test_try_load_invalid_headers_from_wb(
         excel_wb: oppxl.Workbook,
-        excel_driver: drivers.Driver,
+        excel_driver: drivers.DriverForLoadIntf,
         multy_headers: types.MappingProxyType
         ) -> None:
     sheet = excel_wb['test']
@@ -129,7 +129,7 @@ def test_try_load_invalid_headers_from_wb(
 
 def test_excel_driver_fetch_headers_and_values_correct(
         valid_wb: oppxl.Workbook,
-        excel_driver: drivers.Driver,
+        excel_driver: drivers.DriverForLoadIntf,
         multy_headers: types.MappingProxyType
         ) -> None:
     sheet = valid_wb['test']
