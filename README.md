@@ -1,10 +1,13 @@
 # Description
 A simple project for parsing logistics service rates.
-_Turns a string like:_
+Turns a string like:
 > Xiamen	Changsha	Alashankou	Moscow	$9,500 	The early of Dec
 
-_or_:
+or
 > Tianjin-Vladivostok $3100/5200/5200 by huaxin Excluded DTHC$250/300
+
+to table looks like this:
+![ScreenShot](https://ibb.co/FXYgcv4)
 
 
 ## Quickstart
