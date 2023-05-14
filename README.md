@@ -55,6 +55,12 @@ loadfile
 showprev
 savefile
 ```
+Now program can operate with .txt and .xlsx files [for loading]
+and .xlsx files only for saving (in reason that .txt files
+don`t use for the next operations with rates). But it`s simple to
+realise.
+
+## In progress
 Next version will`be realised:
 ```bash
 showcached
@@ -65,5 +71,16 @@ exit
 ```
 and other shutdown operations, now programm finished
 with Ctrl+C only, ha-ha (it`s awful, i know...)
+
+## Packages
+I use
+```bash
+pytest
+```
+for testing and
+```bash
+openpyxl
+```
+for operations with excel files.
 
 So, like that at the moment.
