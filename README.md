@@ -7,7 +7,7 @@ or
 > Tianjin-Vladivostok $3100/5200/5200 by huaxin Excluded DTHC$250/300
 
 to table looks like this:
-![Image]([url=https://ibb.co/FXYgcv4][img]https://i.ibb.co/FXYgcv4/2023-05-14-20-11-58.png[/img][/url])
+[![2023-05-14-20-11-58.png](https://i.postimg.cc/Z5LzkDRG/2023-05-14-20-11-58.png)](https://postimg.cc/YvjsYRQR)
 
 
 ## Quickstart
